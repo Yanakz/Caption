@@ -1,0 +1,44 @@
+# cat_dict_idx = {}
+# for idx in cat_list.keys():
+#     cat_dict_idx[category[idx-1]] = idx
+# cat_dict_supercat = {}
+# for idx in cat_list.keys():
+#     cat_dict_supercat[category[idx-1]] = cat_list[idx]['supercategory']
+    
+# supercate_id = {}
+# spcat = []
+# for idx in cat_list.keys():
+#     spcat.append(cat_list[idx]['supercategory'])
+# spcat = list(set(spcat))
+# for idx,item in enumerate(spcat):
+#     supercate_id[item] = idx
+
+category[9] = 'light'
+category[13] = 'meter'
+category[38] = 'bat'
+category[39] = 'glove'
+category[42] = 'racket'
+category[45] = 'glass'
+category[63] = 'plant'
+category[66] = 'table'
+category[76] = 'phone'
+category[87] = 'teddy'
+category[88] = 'drier'
+
+
+pickle.dump(category,open('data/category.p','wb'))
+pickle.dump(cat_dict_idx,open('data/cat_dict_idx.p','wb'))
+pickle.dump(cat_dict_supercat,open('data/cat_dict_supercat.p','wb'))
+pickle.dump(supercate_id,open('data/supercate_id.p','wb'))
+
+
+
+
+AnID_list = []
+for im_id in range(10000):
+    annIds = Ins_coco.getAnnIds(SALICON['SALICON_id'][im_id])
+    anns = Ins_coco.loadAnns(annIds)
+    AnID_list_item = []
+    for item in anns:
+        AnID_list_item.append(item['category_id'])
+    AnID_list.append(list(set(AnID_list_item)))
