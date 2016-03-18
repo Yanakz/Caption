@@ -17,7 +17,10 @@ import scipy.io as sio
 import datetime
 import math
 import scipy.spatial as sp
-
+from sklearn.feature_extraction.text import TfidfTransformer
+from skimage.draw import polygon
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import Polygon
 
 class CaptionSaliency:
     def __init__(self,dataType,usingSet,dataDir,savefileDir):
@@ -38,7 +41,8 @@ class CaptionSaliency:
         self.category_idx = pickle.load(open('%s/cat_dict_idx.p'%savefileDir,'rb'))#eg., person -- 1
         self.category_supercategory_idx = pickle.load(open('%s/cat_dict_supercat.p'%savefileDir,'rb')) #eg., person--human 
         self.supercategory_idx = pickle.load(open('%s/supercate_id.p'%savefileDir,'rb'))#eg., food--1
-       
+        
+        self.imsal_dict = pickle.load(open('%s/imsal_dict_%s.p'%(savefileDir,usingSet),'rb'))
         
         self.Ins_coco = COCO(self.InsFile)
         self.Cap_coco = COCO(self.CapFile)
@@ -60,9 +64,16 @@ class CaptionSaliency:
         self.size_norm = float(640*480)
         self.loc_norm = float(math.sqrt(640**2+480**2)) 
         
+        
+        
         self.saliencydict_c = {}
         self.saliencydict_s = {}
         
+        #******************10-03-2016 update***********************
+        self.saliencydict_i = {}
+        self.transformer = TfidfTransformer()
+        
+        #******************^^^^^^^10-03-2016 update^^^^^^^^^^***********************
     def show_im(self,image_id):
         if image_id == None:
             raise NameError('no image ID')
@@ -210,9 +221,10 @@ class CaptionSaliency:
             print('caption saliency value computed...!')
     
     def assign_value(self,init_val=None): 
-        [saliency_dict_Cardi,saliency_dict_Seque] = self.init_salient()     
+        [saliency_dict_Cardi,saliency_dict_Seque, saliency_dict_tfidf] = self.init_salient()     
         self.saliencydict_c = saliency_dict_Cardi
         self.saliencydict_s = saliency_dict_Seque
+        self.saliencydict_i = saliency_dict_tfidf
 #==============================================================================
         if not init_val == None:
             idlist = self.SALICON['SALICON_id']
@@ -223,49 +235,100 @@ class CaptionSaliency:
                 for item in anns:
                     if self.saliencydict_c[im_id][item['id']] is not 0:                      
                         v = self.saliencydict_c[im_id][item['id']]
-                        v = v+initv[item['id']]['size']-initv[item['id']]['dtc']
+                        #v = v+initv[item['id']]['size']-initv[item['id']]['dtc']
+                        v = v*(1-initv[item['id']]['dtc'])
                         self.saliencydict_c[im_id][item['id']] = v
                     if self.saliencydict_s[im_id][item['id']] is not 0:
                         v = self.saliencydict_s[im_id][item['id']]
-                        v = v+initv[item['id']]['size']-initv[item['id']]['dtc']
+                        v = v*(1-initv[item['id']]['dtc'])
+                        #v = v+initv[item['id']]['size']-initv[item['id']]['dtc']
                         self.saliencydict_s[im_id][item['id']] = v
+                    if self.saliencydict_i[im_id][item['id']] is not 0:
+                        v = self.saliencydict_i[im_id][item['id']]
+                        v = v*(1-initv[item['id']]['dtc'])
+                        #v = v+initv[item['id']]['size']-initv[item['id']]['dtc']
+                        self.saliencydict_i[im_id][item['id']] = v
 #==============================================================================
+    
+    
+    #******************10-03-2016 update***********************
+    def calc_tfidf(self,count_list):
+        transf = self.transformer
+        tfidf = transf.fit_transform(count_list)
+        tfidf = tfidf.toarray()
+        tfidf = tfidf.tolist()
+        return tfidf
+        
+    #******************^^^^^^^10-03-2016 update^^^^^^^^^^***********************
+    
     
     def init_salient(self):
         #turn list to dict
         dict_Cardi = {}
         dict_Seque = {}
+        dict_TFIDF = {}     
         for im_id, [item_c,item_s] in enumerate(zip(self.Cardi_Noun,self.Seque_Noun)):
             dictc = {}
-            dicts = {}
+            dicts = {}            
+            dicti = {}
+        
+            if not not item_c:              
+                tfidf_value = [v2 for v1,v2 in item_c]  
+                tfidf_value = self.calc_tfidf(tfidf_value)
+                tfidf_value = tfidf_value[0]
+                item_i = list(item_c)
+                #print tfidf_value
+                #print item_i
+                
+                for iid, tfv in enumerate(tfidf_value):
+                    item_i[iid] = (item_i[iid][0],tfv)
+                #print item_i
+                #print '------------------'
+                for item in item_i:
+                    dicti[item[0]] = item[1]
+                
+        
             if not not item_c:
                 for item in item_c:
                     dictc[item[0]] = item[1] 
             if not not item_s:
                 for item in item_s:
                     dicts[item[0]] = item[1]  
+                    
             dict_Cardi[im_id] = dictc
             dict_Seque[im_id] = dicts
-             
+            dict_TFIDF[im_id] = dicti
+            
         #calc
         saliency_dict_Cardi = {}
         saliency_dict_Seque = {}
+        saliency_dict_tfidf = {}
+        
         idlist = self.SALICON['SALICON_id']
         for im_id in range(len(idlist)):
             annIds = self.Ins_coco.getAnnIds(idlist[im_id])
             anns = self.Ins_coco.loadAnns(annIds)
             sa_dict_Cardi = {}
             sa_dict_Seque = {}
+            sa_dict_tfidf = {}
+            
             for item in anns:
                 sa_dict_Cardi[item['id']] = 0
                 sa_dict_Seque[item['id']] = 0
+                sa_dict_tfidf[item['id']] = 0
+                
                 if item['category_id'] in dict_Cardi[im_id].keys():
-                    sa_dict_Cardi[item['id']] = dict_Cardi[im_id][item['category_id']]           
+                    sa_dict_Cardi[item['id']] = dict_Cardi[im_id][item['category_id']]     
+                    sa_dict_tfidf[item['id']] = dict_TFIDF[im_id][item['category_id']]
                 if item['category_id'] in dict_Seque[im_id].keys():
                     sa_dict_Seque[item['id']] = dict_Seque[im_id][item['category_id']]
+               
+                    
             saliency_dict_Cardi[im_id] = sa_dict_Cardi
             saliency_dict_Seque[im_id] = sa_dict_Seque
-        return saliency_dict_Cardi,saliency_dict_Seque
+            saliency_dict_tfidf[im_id] = sa_dict_tfidf
+            
+        return saliency_dict_Cardi,saliency_dict_Seque,saliency_dict_tfidf
                     
                 
                     
@@ -347,6 +410,55 @@ class CaptionSaliency:
             im_dtc[item['id']] = d
         return im_dtc
         
-            
-           
+    def save_saldict_tomatfile(self,sal_dict_to_save,name):
+        datalist = []
+        for item in sal_dict_to_save.keys():
+            im_sal = sal_dict_to_save[item]
+            saveitem = []
+            for im_item in im_sal.keys():
+                saveitem.append([im_item,im_sal[im_item]])
+            datalist.append(saveitem)        
+        sio.savemat(name,{'sal_data':datalist})
+        
+        
+        
+    def plot_saliencymap(self,saliency_dict,image_id):
+        im_id_indataset = self.SALICON['SALICON_id'][image_id]
+        ann_IDlist = self.Ins_coco.getAnnIds(im_id_indataset)
+        ann_list = self.Ins_coco.loadAnns(ann_IDlist)
+        
+        sal_dict = saliency_dict[image_id]
+        maxv = max(sal_dict.values())
+        
+        blankim = np.zeros((480,640,3),np.uint8)
+        plt.imshow(blankim)
+        ax = plt.gca()
+        polygons = []
+        color = []
+        for item in ann_list:
+            c =sal_dict[item['id']]/(maxv)
+            c = [c,c,c]
+            if type(item['segmentation']) == list:
+                # polygon
+                for seg in item['segmentation']:
+                    poly = np.array(seg).reshape((len(seg)/2, 2))
+                    polygons.append(Polygon(poly, True,alpha=0.4))
+                    color.append(c)
+            else:
+                # mask
+                mask = self.Ins_coco.decodeMask(item['segmentation'])
+                img = np.ones( (mask.shape[0], mask.shape[1], 3) )
+                color_mask = c
+                #         if ann['iscrowd'] == 1:
+                #             color_mask = np.array([2.0,166.0,101.0])/255
+                #         if ann['iscrowd'] == 0:             
+                for i in range(3): 
+                    img[:,:,i] = color_mask[i]
+                ax.imshow(np.dstack( (img, mask*0.5) ))
+            p = PatchCollection(polygons, facecolors=color, edgecolors=(0,0,0,1), linewidths=0.5, alpha=0.9)
+            ax.add_collection(p)
+
+
+        
+
             
